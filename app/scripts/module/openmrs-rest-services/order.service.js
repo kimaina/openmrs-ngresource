@@ -38,6 +38,14 @@
                 { query: { method: 'GET', isArray: false } });
         }
 
+        function getCustomResource() {
+          var v = 'custom:(display,uuid,orderNumber,accessionNumber,orderReason,orderReasonNonCoded,urgency,action,' +
+            'commentToFulfiller,dateActivated,instructions,orderer:default,encounter:default,patient:default,concept:ref)';
+          return $resource(OpenmrsSettings.getCurrentRestUrlBase().trim() + 'order/:uuid',
+            { uuid: '@uuid', v: v },
+            { query: { method: 'GET', isArray: false } });
+        }
+
         function getOrderByUuid(orderUuid, successCallback, failedCallback) {
             var resource = getResource();
             return resource.get({ uuid: orderUuid }).$promise
@@ -52,7 +60,7 @@
         }
 
         function getOrdersByPatientUuid(patientUuid, successCallback, failedCallback) {
-            var resource = getResource();
+            var resource = getCustomResource();
             return resource.get({ patient: patientUuid }).$promise
                 .then(function (response) {
                     successCallback(response);
