@@ -752,9 +752,16 @@ jshint -W003,-W109, -W106, -W098, -W003, -W068, -W004, -W033, -W030, -W117, -W11
       _baseRestUrl = url;
     }
     
-    function __getResource() {
-      return $resource(getFormBaseUrl() + 'form/:uuid?v=' + FORM_REP,
-        { uuid: '@uuid' },{ query: { method: 'GET', isArray: false } });
+    function __getResource(cachingEnabled, rep) {
+      var rep = rep || FORM_REP;
+      return $resource(getFormBaseUrl() + 'form/:uuid?v=' + rep,
+        { uuid: '@uuid' },{ 
+          query: { 
+            method: 'GET',
+            isArray: false ,
+            cache: cachingEnabled? true: false 
+          } 
+        });
     }
     
     function __getSearchResource() {
@@ -774,13 +781,26 @@ jshint -W003,-W109, -W106, -W098, -W003, -W068, -W004, -W033, -W030, -W117, -W11
         __handleCallbacks(promise, successCallback, failedCallback);
         return promise;
     }
-
-    function getFormByUuid(uuid, successCallback, failedCallback) {
-      var resource = __getResource();
-      var promise = resource.get({ uuid: uuid }).$promise
+    
+    /**
+     * getFormByUuid accepts params which can be simple uuid string or an object
+     * containing uuid & representation along with caching option.
+     * @param params: can be string form uuid or object
+     * @return a promise of the rest request.
+     */
+    function getFormByUuid(params, successCallback, failedCallback) {
+      if (angular.isDefined(params) && typeof params === 'string') {
+          var formUuid = params;
+          var resource = __getResource();
+      } else {
+          var formUuid = params.uuid;
+          var rep = params.v || FORM_REP;
+          var cachingEnabled = params.caching ? true : false;
+          var resource = __getResource(cachingEnabled, rep);
+      }
+      var promise = resource.query({ uuid: formUuid }).$promise
         .then(function(data) {
           return __toModel(data);
-          // successCallback(__toModel(data));
         })
         .catch(function(err) {
            return $q.reject(err);
@@ -918,11 +938,13 @@ jshint -W003,-W109, -W106, -W098, -W003, -W068, -W004, -W033, -W030, -W117, -W11
       return {
         uuid:openmrsForm.uuid,
         name: openmrsForm.name,
+        description: openmrsForm.description,
         encounterTypeUuid: encounterType.uuid,
         encounterTypeName: encounterType.name,
         version: openmrsForm.version,
         published: openmrsForm.published,
-        resources: openmrsForm.resources || []
+        resources: openmrsForm.resources || [],
+        auditInfo: openmrsForm.auditInfo
       };
     }
     
@@ -1030,13 +1052,14 @@ jshint -W117, -W098, -W116, -W003, -W026
                                 'DrugResService',
                                 'PatientResRelationshipService',
                                 'PatientRelationshipTypeResService',
-                                'OrderResService'];
+                                'OrderResService',
+                                'PersonAttributeResService'];
 
   function OpenmrsRestService(session, authService, PatientResService,
               UserResService, EncounterResService, LocationResService,
               ProviderResService, ObsResService, DrugResService,
               PatientResRelationshipService,PatientRelationshipTypeResService,
-              OrderResService) {
+              OrderResService,PersonAttributeResService) {
     var service = {
           getSession: getSession,
           getAuthService: getAuthService,
@@ -1049,7 +1072,8 @@ jshint -W117, -W098, -W116, -W003, -W026
           getDrugResService:getDrugResService,
           getPatientRelationshipService:getPatientRelationshipService,
           getPatientRelationshipTypeService:getPatientRelationshipTypeService,
-          getOrderResService:getOrderResService
+          getOrderResService:getOrderResService,
+          getPersonAttributeResService:getPersonAttributeResService
         };
 
     return service;
@@ -1102,6 +1126,10 @@ jshint -W117, -W098, -W116, -W003, -W026
 
     function getOrderResService() {
       return OrderResService;
+    }
+
+    function getPersonAttributeResService() {
+      return PersonAttributeResService;
     }
   }
 }) ();
@@ -2252,6 +2280,87 @@ function PatientRelationshipTypeResService(OpenmrsSettings,$resource,PatientRela
                 });
         }
     }
+})();
+
+/*
+ jshint -W026, -W116, -W098, -W003, -W068, -W069, -W004, -W033, -W030, -W117
+ */
+/*
+ jscs:disable disallowQuotedKeysInObjects, safeContextKeyword, requireDotNotation, requirePaddingNewLinesBeforeLineComments, requireTrailingComma
+ */
+(function () {
+  'use strict';
+
+  angular
+    .module('openmrs-ngresource.restServices')
+    .factory('PersonAttributeResService', PersonAttributeResService);
+
+  PersonAttributeResService.$inject = ['OpenmrsSettings', '$resource'];
+
+  function PersonAttributeResService(OpenmrsSettings, $resource) {
+    var service = {
+      getPersonAttributeByUuid: getPersonAttributeByUuid,
+      saveUpdatePersonAttribute: saveUpdatePersonAttribute,
+      voidPersonAttribute: voidPersonAttribute
+    };
+
+    return service;
+
+    function getResource() {
+      var v = 'full';
+      return $resource(OpenmrsSettings.getCurrentRestUrlBase().trim() + 'person/:uuid/attribute',
+        {uuid: '@uuid', v: v},
+        {query: {method: 'GET', isArray: false}});
+    }
+
+    function saveUpdatePersonAttribute(personAttribute, successCallback, errorCallback) {
+      var personAttributeResource = getResource();
+      var uuid = personAttribute.uuid;
+      delete personAttribute['uuid'];
+      personAttributeResource.save({ uuid: uuid },personAttribute).$promise
+        .then(function (data) {
+          successCallback(data);
+        })
+        .catch(function (error) {
+          console.error('An Error occured when saving PersonAttribute ', error);
+          if (typeof errorCallback === 'function')
+            errorCallback('Error processing request', error);
+        });
+
+    }
+
+    function getPersonAttributeByUuid(personAttribute, successCallback, errorCallback) {
+      var personAttributeResource = getResource();
+
+      return personAttributeResource.get({uuid: personAttribute.uuid}).$promise
+        .then(function (data) {
+          successCallback(data);
+        })
+        .catch(function (error) {
+          console.error('An Error occured when getting PersonAttribute ', error);
+          if (typeof errorCallback === 'function')
+            errorCallback('Error processing request', error);
+        });
+    }
+
+    function voidPersonAttribute(personAttribute, successCallback, errorCallback) {
+      var personAttributeResource = getResource();
+      personAttributeResource.delete({uuid: personAttribute.uuid},
+        function (data) {
+          if (successCallback) {
+            successCallback(data);
+          } else return data;
+        },
+
+        function (error) {
+          console.error('An Error occured when voiding PersonAttribute ', error);
+          if (typeof errorCallback === 'function')
+            errorCallback('Error processing request', error);
+        }
+      );
+    }
+
+  }
 })();
 
 (function() {
@@ -4829,7 +4938,7 @@ angular.module('openmrs-ngresource.restServices').run(['$templateCache', functio
   'use strict';
 
   $templateCache.put('views/directives/obsview.html',
-    "<style>.panel-heading a:after {\n" +
+    "<style> .panel-heading a:after {\n" +
     "    font-family: 'Glyphicons Halflings';\n" +
     "    content: \"\\e114\";\n" +
     "    float: right;\n" +
@@ -4862,7 +4971,7 @@ angular.module('openmrs-ngresource.restServices').run(['$templateCache', functio
     "  .panel{\n" +
     "    padding: 2px;\n" +
     "    margin: 0px;\n" +
-    "  }</style> <div class=\"panel panel-default\"> <div class=\"panel-body\" ng-repeat=\"obsItem in obs\" ng-include=\"'obsTree'\"> </div> </div> <script type=\"text/ng-template\" id=\"obsTree\"><span ng-if=\"obsItem.value\">\n" +
+    "  } </style> <div class=\"panel panel-default\"> <div class=\"panel-body\" ng-repeat=\"obsItem in obs\" ng-include=\"'obsTree'\"> </div> </div> <script type=\"text/ng-template\" id=\"obsTree\"> <span ng-if=\"obsItem.value\">\n" +
     "{{ obsItem.concept.name.display }}\n" +
     "<span ng-if='!obsItem.concept.name.display'>{{obsItem.concept.display}}</span>\n" +
     "<span ng-if=\"!obsItem.groupMembers.length > 0\"> > </span>\n" +
@@ -4878,12 +4987,12 @@ angular.module('openmrs-ngresource.restServices').run(['$templateCache', functio
     "      <div class=\"panel-body\" ng-repeat=\"obsItem in obsItem.groupMembers\" ng-include=\"'obsTree'\">\n" +
     "      </div>\n" +
     "    </div>\n" +
-    "  </div></script>"
+    "  </div> </script> "
   );
 
 
   $templateCache.put('views/main.html',
-    "<div class=\"jumbotron\"> <h1>'Allo, 'Allo!</h1> <p class=\"lead\"> <img src=\"images/yeoman.png\" alt=\"I'm Yeoman\"><br> Always a pleasure scaffolding your apps. </p> <p><a class=\"btn btn-lg btn-success\" ng-href=\"#/\">Splendid!<span class=\"glyphicon glyphicon-ok\"></span></a></p> </div> <div class=\"row marketing\"> <h4>HTML5 Boilerplate</h4> <p> HTML5 Boilerplate is a professional front-end template for building fast, robust, and adaptable web apps or sites. </p> <h4>Angular</h4> <p> AngularJS is a toolset for building the framework most suited to your application development. </p> <h4>Karma</h4> <p>Spectacular Test Runner for JavaScript.</p> </div>"
+    "<div class=\"jumbotron\"> <h1>'Allo, 'Allo!</h1> <p class=\"lead\"> <img src=\"images/yeoman.png\" alt=\"I'm Yeoman\"><br> Always a pleasure scaffolding your apps. </p> <p><a class=\"btn btn-lg btn-success\" ng-href=\"#/\">Splendid!<span class=\"glyphicon glyphicon-ok\"></span></a></p> </div> <div class=\"row marketing\"> <h4>HTML5 Boilerplate</h4> <p> HTML5 Boilerplate is a professional front-end template for building fast, robust, and adaptable web apps or sites. </p> <h4>Angular</h4> <p> AngularJS is a toolset for building the framework most suited to your application development. </p> <h4>Karma</h4> <p>Spectacular Test Runner for JavaScript.</p> </div> "
   );
 
 }]);
